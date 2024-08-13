@@ -7,6 +7,7 @@ package io.opentelemetry.instrumentation.agent.okhttp.v3_0;
 
 import io.opentelemetry.instrumentation.library.okhttp.v3_0.internal.OkHttp3Singletons;
 import net.bytebuddy.asm.Advice;
+
 import okhttp3.OkHttpClient;
 
 public class OkHttpClientAdvice {
@@ -21,5 +22,8 @@ public class OkHttpClientAdvice {
         if (!builder.networkInterceptors().contains(OkHttp3Singletons.TRACING_INTERCEPTOR)) {
             builder.addNetworkInterceptor(OkHttp3Singletons.TRACING_INTERCEPTOR);
         }
+        // TODO Check whether there is existing event listener factory set (by user for ex.).
+        // If so, we may need to wrap it.
+        builder.eventListenerFactory(OkHttp3Singletons.TRACING_EVENT_LISTENER_FACTORY);
     }
 }

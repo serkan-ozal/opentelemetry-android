@@ -7,6 +7,8 @@ package io.opentelemetry.instrumentation.library.okhttp.v3_0.internal;
 
 import static java.util.Collections.singletonList;
 
+import static io.opentelemetry.instrumentation.api.instrumenter.SpanKindExtractor.alwaysInternal;
+
 import io.opentelemetry.api.GlobalOpenTelemetry;
 import io.opentelemetry.context.Context;
 import io.opentelemetry.context.Scope;
@@ -18,8 +20,13 @@ import io.opentelemetry.instrumentation.okhttp.v3_0.internal.ConnectionErrorSpan
 import io.opentelemetry.instrumentation.okhttp.v3_0.internal.OkHttpAttributesGetter;
 import io.opentelemetry.instrumentation.okhttp.v3_0.internal.OkHttpInstrumenterFactory;
 import io.opentelemetry.instrumentation.okhttp.v3_0.internal.TracingInterceptor;
+
+import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.Function;
 import java.util.function.Supplier;
+
+import okhttp3.Call;
+import okhttp3.EventListener;
 import okhttp3.Interceptor;
 import okhttp3.Request;
 import okhttp3.Response;
@@ -29,6 +36,8 @@ import okhttp3.Response;
  * any time.
  */
 public final class OkHttp3Singletons {
+
+    private static final String INSTRUMENTATION_NAME = "io.opentelemetry.okhttp-3.0";
 
     private static final Supplier<Instrumenter<Request, Response>> INSTRUMENTER =
             CachedSupplier.create(
@@ -56,6 +65,15 @@ public final class OkHttp3Singletons {
                                                             .newPeerServiceResolver())),
                                     OkHttpInstrumentationConfig
                                             .emitExperimentalHttpClientMetrics()));
+
+    private static final Supplier<Instrumenter<OkHttpEvent, Void>> EVENT_INSTRUMENTER =
+            CachedSupplier.create(
+                    () ->
+                            Instrumenter.<OkHttpEvent, Void>builder(
+                                            GlobalOpenTelemetry.get(),
+                                            INSTRUMENTATION_NAME,
+                                            OkHttpEvent::getName)
+                                    .buildInstrumenter(alwaysInternal()));
 
     public static final Interceptor CALLBACK_CONTEXT_INTERCEPTOR =
             chain -> {
@@ -91,6 +109,17 @@ public final class OkHttp3Singletons {
                                     new TracingInterceptor(
                                             INSTRUMENTER.get(),
                                             GlobalOpenTelemetry.getPropagators())));
+
+    public static final EventListener.Factory TRACING_EVENT_LISTENER_FACTORY =
+            new EventListener.Factory() {
+                final AtomicLong nextCallId = new AtomicLong(1L);
+
+                @Override
+                public EventListener create(Call call) {
+                    long callId = nextCallId.getAndIncrement();
+                    return new TracingEventListener(EVENT_INSTRUMENTER.get(), callId, System.nanoTime());
+                }
+            };
 
     private OkHttp3Singletons() {}
 }
