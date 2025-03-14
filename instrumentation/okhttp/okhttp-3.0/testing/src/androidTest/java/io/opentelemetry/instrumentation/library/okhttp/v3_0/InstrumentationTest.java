@@ -70,7 +70,7 @@ public class InstrumentationTest {
 
         span.end();
 
-        assertEquals(2, openTelemetryRumRule.inMemorySpanExporter.getFinishedSpanItems().size());
+        assertEquals(4, openTelemetryRumRule.inMemorySpanExporter.getFinishedSpanItems().size());
     }
 
     @Test
@@ -113,7 +113,7 @@ public class InstrumentationTest {
         lock.await();
         span.end();
 
-        assertEquals(2, openTelemetryRumRule.inMemorySpanExporter.getFinishedSpanItems().size());
+        assertEquals(4, openTelemetryRumRule.inMemorySpanExporter.getFinishedSpanItems().size());
     }
 
     @Test
@@ -159,5 +159,130 @@ public class InstrumentationTest {
     private Call createCall(OkHttpClient client, String urlPath) {
         Request request = new Request.Builder().url(server.url(urlPath)).build();
         return client.newCall(request);
+    }
+
+    @Test
+    public void testTraces() throws IOException {
+        final String URL = "https://reqres.in/api/users";
+
+        Span span = openTelemetryRumRule.getSpan();
+
+        try (Scope ignored = span.makeCurrent()) {
+            OkHttpClient client =
+                    new OkHttpClient.Builder()
+                            .addInterceptor(
+                                    chain -> {
+                                        SpanContext currentSpan = Span.current().getSpanContext();
+                                        assertEquals(
+                                                span.getSpanContext().getTraceId(),
+                                                currentSpan.getTraceId());
+                                        return chain.proceed(chain.request());
+                                    })
+                            .build();
+            Request request = new Request.Builder().url(URL).build();
+            Call call = client.newCall(request);
+            call.execute().close();
+            OkHttpClient client2 =
+                    new OkHttpClient.Builder()
+                            .addInterceptor(
+                                    chain -> {
+                                        SpanContext currentSpan = Span.current().getSpanContext();
+                                        assertEquals(
+                                                span.getSpanContext().getTraceId(),
+                                                currentSpan.getTraceId());
+                                        return chain.proceed(chain.request());
+                                    })
+                            .build();
+            Request request2 = new Request.Builder().url(URL).build();
+            Call call2 = client2.newCall(request2);
+            call2.execute().close();
+        }
+
+        span.end();
+
+        openTelemetryRumRule.inMemorySpanExporter.getFinishedSpanItems().forEach((s) -> {
+            //System.out.println(s);
+            System.out.println(String.format(
+                    "Span name: %s, span id: %s, parent span id: %s",
+                    s.getName(),  s.getSpanId(), s.getParentSpanId()));
+        });
+
+        assertEquals(9, openTelemetryRumRule.inMemorySpanExporter.getFinishedSpanItems().size());
+    }
+
+    @Test
+    public void testTraces2() throws Exception {
+        final String URL = "https://reqres.in/api/users";
+
+        Span span = openTelemetryRumRule.getSpan();
+
+        try (Scope ignored = span.makeCurrent()) {
+            OkHttpClient client =
+                    new OkHttpClient.Builder()
+                            .addInterceptor(
+                                    chain -> {
+                                        SpanContext currentSpan = Span.current().getSpanContext();
+                                        assertEquals(
+                                                span.getSpanContext().getTraceId(),
+                                                currentSpan.getTraceId());
+                                        return chain.proceed(chain.request());
+                                    })
+                            .build();
+            Request request = new Request.Builder().url(URL).build();
+            Call call = client.newCall(request);
+
+            CountDownLatch callLatch = new CountDownLatch(1);
+            call.enqueue(new Callback() {
+                @Override
+                public void onFailure(@NonNull Call call, @NonNull IOException e) {
+                    callLatch.countDown();
+                }
+
+                @Override
+                public void onResponse(@NonNull Call call, @NonNull Response response) throws IOException {
+                    response.close();
+                    callLatch.countDown();
+                }
+            });
+            callLatch.await();
+        }
+
+        span.end();
+
+        openTelemetryRumRule.inMemorySpanExporter.getFinishedSpanItems().forEach((s) -> {
+            //System.out.println(s);
+            System.out.println(String.format(
+                    "Span name: %s, span id: %s, parent span id: %s",
+                    s.getName(),  s.getSpanId(), s.getParentSpanId()));
+        });
+
+        assertEquals(5, openTelemetryRumRule.inMemorySpanExporter.getFinishedSpanItems().size());
+    }
+
+    @Test(expected = IOException.class)
+    public void testTraces3() throws IOException {
+        final String URL = "https://reqres.inxyz/api/users";
+
+        Span span = openTelemetryRumRule.getSpan();
+
+        try (Scope ignored = span.makeCurrent()) {
+            OkHttpClient client =
+                    new OkHttpClient.Builder()
+                            .addInterceptor(new RetryInterceptor())
+                            .build();
+            Request request = new Request.Builder().url(URL).build();
+            Call call = client.newCall(request);
+            call.execute().close();
+        }
+        span.end();
+
+        openTelemetryRumRule.inMemorySpanExporter.getFinishedSpanItems().forEach((s) -> {
+            //System.out.println(s);
+            System.out.println(String.format(
+                    "Span name: %s, span id: %s, parent span id: %s",
+                    s.getName(),  s.getSpanId(), s.getParentSpanId()));
+        });
+
+        assertEquals(5, openTelemetryRumRule.inMemorySpanExporter.getFinishedSpanItems().size());
     }
 }

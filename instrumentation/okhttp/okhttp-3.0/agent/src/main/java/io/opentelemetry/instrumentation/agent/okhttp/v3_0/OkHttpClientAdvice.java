@@ -5,8 +5,10 @@
 
 package io.opentelemetry.instrumentation.agent.okhttp.v3_0;
 
+import io.opentelemetry.instrumentation.library.okhttp.v3_0.internal.ErrorAwareInterceptor;
 import io.opentelemetry.instrumentation.library.okhttp.v3_0.internal.OkHttp3Singletons;
 import net.bytebuddy.asm.Advice;
+
 import okhttp3.OkHttpClient;
 
 public class OkHttpClientAdvice {
@@ -18,8 +20,15 @@ public class OkHttpClientAdvice {
             builder.interceptors().add(1, OkHttp3Singletons.RESEND_COUNT_CONTEXT_INTERCEPTOR);
             builder.interceptors().add(2, OkHttp3Singletons.CONNECTION_ERROR_INTERCEPTOR);
         }
+        builder.addInterceptor(new ErrorAwareInterceptor());
         if (!builder.networkInterceptors().contains(OkHttp3Singletons.TRACING_INTERCEPTOR)) {
             builder.addNetworkInterceptor(OkHttp3Singletons.TRACING_INTERCEPTOR);
+        }
+
+        if (OkHttp3Singletons.TRACING_EVENT_LISTENER_FACTORY != null) {
+            // TODO Check whether there is existing event listener factory set (by user for ex.).
+            // If so, we may need to wrap it.
+            builder.eventListenerFactory(OkHttp3Singletons.TRACING_EVENT_LISTENER_FACTORY);
         }
     }
 }
